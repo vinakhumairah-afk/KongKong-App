@@ -1,0 +1,750 @@
+<!-- SVG Logo Placeholder - Ganti dengan logo Anda -->
+<html lang="id">
+ <head>
+  <style>@view-transition { navigation: auto; }</style>
+ </head>
+ <body class="min-h-full">
+  <svg width="32" height="32" viewbox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" stroke-width="2" stroke-linejoin="round" /> <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linejoin="round" /> <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linejoin="round" />
+  </svg>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KongKong</title>
+  <script src="/_sdk/data_sdk.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+    
+
+  </style>
+  <div id="app" class="min-h-full p-6"></div>
+  <script>
+    const defaultConfig = {
+      background_color: "#ffffff",
+      surface_color: "#ffffff",
+      text_color: "#1e293b",
+      primary_action_color: "#0ea5e9",
+      secondary_action_color: "#64748b",
+      font_family: "Inter",
+      font_size: 16,
+      store_name: "🍪 Cookies KongKong",
+      store_phone: "0857-6295-9884",
+      store_address: " Jl. Budi Kemuliaan No. 01 Kampung Seraya, SMAS Kartini Batam, Kepulauan Riau - Indonesia",
+      default_product_name: "Cookies KongKong",
+      default_price: "20000"
+    };
+
+    let config = { ...defaultConfig };
+    let orders = [];
+    let isLoading = false;
+
+    function generateOrderId() {
+      const date = new Date();
+      const timestamp = date.getTime();
+      return `ORD-${timestamp}`;
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0
+      }).format(amount);
+    }
+
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat('id-ID', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    }
+
+    async function handleFormSubmit(e) {
+      e.preventDefault();
+      
+      if (isLoading) return;
+      
+      if (orders.length >= 999) {
+        showNotification('Batas maksimum 999 pesanan telah tercapai. Silakan hapus beberapa pesanan terlebih dahulu.', 'error');
+        return;
+      }
+
+      const formData = new FormData(e.target);
+      const customerName = formData.get('customer_name');
+      const customerPhone = formData.get('customer_phone');
+      const productName = formData.get('product_name');
+      const quantity = parseInt(formData.get('quantity'));
+      const pricePerUnit = parseInt(formData.get('price_per_unit'));
+      const paymentMethod = formData.get('payment_method');
+
+      if (!customerName || !customerPhone || !productName || !quantity || !pricePerUnit) {
+        showNotification('Mohon lengkapi semua field', 'error');
+        return;
+      }
+
+      const totalPrice = quantity * pricePerUnit;
+      const orderId = generateOrderId();
+      const orderDate = new Date().toISOString();
+
+      const newOrder = {
+        order_id: orderId,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        product_name: productName,
+        quantity: quantity,
+        price_per_unit: pricePerUnit,
+        total_price: totalPrice,
+        order_date: orderDate,
+        payment_method: paymentMethod
+      };
+
+      setLoading(true);
+      
+      // Coba simpan ke Data SDK jika tersedia
+      if (window.dataSdk) {
+        try {
+          const result = await window.dataSdk.create(newOrder);
+          setLoading(false);
+
+          if (result.isOk) {
+            e.target.reset();
+            document.getElementById('product_name').value = config.default_product_name || defaultConfig.default_product_name;
+            document.getElementById('price_per_unit').value = config.default_price || defaultConfig.default_price;
+            showNotification('Pesanan berhasil dibuat!', 'success');
+          } else {
+            showNotification('Gagal membuat pesanan. Silakan coba lagi.', 'error');
+          }
+        } catch (error) {
+          setLoading(false);
+          // Fallback: simpan lokal jika Data SDK gagal
+          orders.push(newOrder);
+          e.target.reset();
+          document.getElementById('product_name').value = config.default_product_name || defaultConfig.default_product_name;
+          document.getElementById('price_per_unit').value = config.default_price || defaultConfig.default_price;
+          render();
+          showNotification('Pesanan berhasil dibuat (tersimpan lokal)!', 'success');
+        }
+      } else {
+        // Fallback: simpan lokal jika Data SDK tidak tersedia
+        setLoading(false);
+        orders.push(newOrder);
+        e.target.reset();
+        document.getElementById('product_name').value = config.default_product_name || defaultConfig.default_product_name;
+        document.getElementById('price_per_unit').value = config.default_price || defaultConfig.default_price;
+        render();
+        showNotification('Pesanan berhasil dibuat (tersimpan lokal)!', 'success');
+      }
+    }
+
+    async function deleteOrder(order) {
+      const deleteBtn = document.querySelector(`[data-order-id="${order.order_id}"]`);
+      if (deleteBtn) {
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = 'Menghapus...';
+      }
+
+      // Coba hapus dari Data SDK jika tersedia
+      if (window.dataSdk && order.__backendId) {
+        try {
+          const result = await window.dataSdk.delete(order);
+
+          if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = 'Hapus';
+          }
+
+          if (result.isOk) {
+            showNotification('Pesanan berhasil dihapus', 'success');
+          } else {
+            showNotification('Gagal menghapus pesanan', 'error');
+          }
+        } catch (error) {
+          // Fallback: hapus dari array lokal
+          const index = orders.findIndex(o => o.order_id === order.order_id);
+          if (index > -1) {
+            orders.splice(index, 1);
+            render();
+          }
+          
+          if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = 'Hapus';
+          }
+          
+          showNotification('Pesanan berhasil dihapus (lokal)', 'success');
+        }
+      } else {
+        // Fallback: hapus dari array lokal
+        const index = orders.findIndex(o => o.order_id === order.order_id);
+        if (index > -1) {
+          orders.splice(index, 1);
+          render();
+        }
+        
+        if (deleteBtn) {
+          deleteBtn.disabled = false;
+          deleteBtn.textContent = 'Hapus';
+        }
+        
+        showNotification('Pesanan berhasil dihapus (lokal)', 'success');
+      }
+    }
+
+    function showReceipt(order) {
+      const modal = document.getElementById('receipt-modal');
+      const receiptContent = document.getElementById('receipt-content');
+      
+      receiptContent.innerHTML = `
+        <div class="flex items-center mb-6">
+          <!-- Logo Area -->
+          <div class="flex-shrink-0 mr-4">
+            <div class="w-16 h-16 rounded-lg flex items-center justify-center" style="background-color: transparent;">
+              <img src="kongkong.png">
+            </div>
+          </div>
+          
+          <!-- Store Info -->
+          <div class="flex-1">
+            <h2 class="font-bold mb-1" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.5}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+              ${config.store_name || defaultConfig.store_name}
+            </h2>
+            <p style="font-size: ${(config.font_size || defaultConfig.font_size) * 0.85}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+              ${config.store_address || defaultConfig.store_address}
+            </p>
+            <p style="font-size: ${(config.font_size || defaultConfig.font_size) * 0.85}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+              Telp: ${config.store_phone || defaultConfig.store_phone}
+            </p>
+          </div>
+        </div>
+        
+        <div class="border-t-2 border-b-2 py-4 mb-4" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+          <h3 class="font-bold mb-3" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.2}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+            KWITANSI PENJUALAN
+          </h3>
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <span style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">No. Pesanan:</span>
+              <span class="font-semibold" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${order.order_id}</span>
+            </div>
+            <div class="flex justify-between">
+              <span style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Tanggal:</span>
+              <span style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${formatDate(order.order_date)}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="mb-4">
+          <h4 class="font-semibold mb-2" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.1}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+            Data Pembeli
+          </h4>
+          <div class="space-y-1">
+            <p style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+              Nama: ${order.customer_name}
+            </p>
+            <p style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+              Telepon: ${order.customer_phone}
+            </p>
+          </div>
+        </div>
+        
+        <div class="mb-4">
+          <h4 class="font-semibold mb-2" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.1}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+            Detail Pesanan
+          </h4>
+          <table class="w-full">
+            <thead>
+              <tr class="border-b" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+                <th class="text-left py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Produk</th>
+                <th class="text-center py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Jumlah</th>
+                <th class="text-right py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Harga</th>
+                <th class="text-right py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${order.product_name}</td>
+                <td class="text-center py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${order.quantity}</td>
+                <td class="text-right py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${formatCurrency(order.price_per_unit)}</td>
+                <td class="text-right py-2" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${formatCurrency(order.total_price)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="border-t-2 pt-4 mb-4" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-bold" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.2}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">TOTAL BAYAR</span>
+            <span class="font-bold" style="font-size: ${(config.font_size || defaultConfig.font_size) * 1.5}px; color: ${config.primary_action_color || defaultConfig.primary_action_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${formatCurrency(order.total_price)}</span>
+          </div>
+          <div class="flex justify-between">
+            <span style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">Metode Pembayaran:</span>
+            <span class="font-semibold" style="font-size: ${config.font_size || defaultConfig.font_size}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">${order.payment_method}</span>
+          </div>
+        </div>
+        
+        <div class="text-center mt-6 pt-4 border-t" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+          <p style="font-size: ${(config.font_size || defaultConfig.font_size) * 0.85}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${config.font_family || defaultConfig.font_family}, Arial, sans-serif;">
+            Terima kasih atas pembelian Anda!
+          </p>
+        </div>
+      `;
+      
+      modal.classList.remove('hidden');
+    }
+
+    function closeReceipt() {
+      document.getElementById('receipt-modal').classList.add('hidden');
+    }
+
+    async function shareReceipt() {
+      const receiptElement = document.getElementById('receipt-print');
+      
+      try {
+        // Buat canvas dari elemen kwitansi
+        const canvas = await html2canvas(receiptElement, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          allowTaint: true
+        });
+        
+        // Konversi canvas ke blob
+        canvas.toBlob(async (blob) => {
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'kwitansi.png', { type: 'image/png' })] })) {
+            // Gunakan Web Share API jika tersedia
+            try {
+              await navigator.share({
+                title: 'Kwitansi Penjualan',
+                text: 'Kwitansi penjualan dari ' + (config.store_name || defaultConfig.store_name),
+                files: [new File([blob], 'kwitansi.png', { type: 'image/png' })]
+              });
+              showNotification('Kwitansi berhasil dibagikan!', 'success');
+            } catch (error) {
+              // Fallback ke download jika share gagal
+              downloadImage(blob);
+            }
+          } else {
+            // Fallback ke download jika Web Share API tidak tersedia
+            downloadImage(blob);
+          }
+        }, 'image/png');
+        
+      } catch (error) {
+        showNotification('Gagal membuat gambar kwitansi', 'error');
+      }
+    }
+    
+    function downloadImage(blob) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'kwitansi-' + Date.now() + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showNotification('Kwitansi berhasil diunduh! Silakan kirim ke konsumen.', 'success');
+    }
+
+    function setLoading(loading) {
+      isLoading = loading;
+      const submitBtn = document.getElementById('submit-btn');
+      if (submitBtn) {
+        submitBtn.disabled = loading;
+        submitBtn.textContent = loading ? 'Memproses...' : 'Buat Pesanan';
+      }
+    }
+
+    function showNotification(message, type) {
+      const notification = document.createElement('div');
+      notification.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+      notification.style.backgroundColor = type === 'success' ? (config.primary_action_color || defaultConfig.primary_action_color) : '#ef4444';
+      notification.style.color = '#ffffff';
+      notification.style.fontFamily = `${config.font_family || defaultConfig.font_family}, Arial, sans-serif`;
+      notification.style.fontSize = `${config.font_size || defaultConfig.font_size}px`;
+      notification.textContent = message;
+      
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
+
+    async function onConfigChange(newConfig) {
+      config = { ...newConfig };
+      render();
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      const baseSize = config.font_size || defaultConfig.font_size;
+      const fontFamily = `${config.font_family || defaultConfig.font_family}, Arial, sans-serif`;
+      
+      app.style.backgroundColor = config.background_color || defaultConfig.background_color;
+      app.style.minHeight = '100%';
+      
+      app.innerHTML = `
+        <div class="max-w-6xl mx-auto">
+          <header class="mb-8 text-center">
+            <h1 class="font-bold mb-2" style="font-size: ${baseSize * 2}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+              SISTEM PENJUALAN & KWITANSI ONLINE
+            </h1>
+            <br>
+            <h5 class="font-bold mb-2" style="font-size: ${baseSize * 1.5}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+              🍪 Cookies KongKong
+            </h5>
+            <p>
+                Jl. Budi Kemuliaan No. 01 Kampung Seraya, SMAS Kartini Batam, Kepulauan Riau - Indonesia
+            </p>
+          </header>
+
+          <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <div class="rounded-lg shadow-lg p-6" style="background-color: ${config.surface_color || defaultConfig.surface_color};">
+              <h2 class="font-bold mb-4" style="font-size: ${baseSize * 1.5}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                Buat Pesanan Baru
+              </h2>
+              <form id="order-form" class="space-y-4">
+                <div>
+                  <label for="customer_name" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                    Nama Pembeli
+                  </label>
+                  <input 
+                    type="text" 
+                    id="customer_name" 
+                    name="customer_name" 
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                    style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                    placeholder="Masukkan nama pembeli"
+                  >
+                </div>
+
+                <div>
+                  <label for="customer_phone" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                    Nomor Telepon
+                  </label>
+                  <input 
+                    type="tel" 
+                    id="customer_phone" 
+                    name="customer_phone" 
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                    style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                    placeholder="0812-3456-7890"
+                  >
+                </div>
+
+                <div>
+                  <label for="product_name" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                    Nama Produk
+                  </label>
+                  <input 
+                    type="text" 
+                    id="product_name" 
+                    name="product_name" 
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                    style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                    value="${config.default_product_name || defaultConfig.default_product_name}"
+                  >
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label for="quantity" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                      Jumlah
+                    </label>
+                    <input 
+                      type="number" 
+                      id="quantity" 
+                      name="quantity" 
+                      required
+                      min="1"
+                      class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                      style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                      placeholder="1"
+                    >
+                  </div>
+
+                  <div>
+                    <label for="price_per_unit" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                      Harga Satuan (Rp)
+                    </label>
+                    <input 
+                      type="number" 
+                      id="price_per_unit" 
+                      name="price_per_unit" 
+                      required
+                      min="0"
+                      class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                      style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                      value="${config.default_price || defaultConfig.default_price}"
+                    >
+                  </div>
+                </div>
+
+                <div>
+                  <label for="payment_method" class="block mb-2 font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                    Metode Pembayaran
+                  </label>
+                  <select 
+                    id="payment_method" 
+                    name="payment_method" 
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                    style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily}; border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; background-color: ${config.surface_color || defaultConfig.surface_color};"
+                  >
+                    <option value="Tunai">Tunai</option>
+                    <option value="Transfer Bank">Transfer Bank</option>
+                    <option value="E-Wallet">E-Wallet</option>
+                  </select>
+                </div>
+
+                <button 
+                  type="submit" 
+                  id="submit-btn"
+                  class="w-full py-3 rounded-lg font-semibold transition-colors"
+                  style="font-size: ${baseSize}px; background-color: ${config.primary_action_color || defaultConfig.primary_action_color}; color: #ffffff; font-family: ${fontFamily};"
+                  onmouseover="this.style.opacity='0.9'"
+                  onmouseout="this.style.opacity='1'"
+                >
+                  Buat Pesanan
+                </button>
+              </form>
+            </div>
+
+            <div class="rounded-lg shadow-lg p-6" style="background-color: ${config.surface_color || defaultConfig.surface_color};">
+              <h2 class="font-bold mb-4" style="font-size: ${baseSize * 1.5}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                Riwayat Pesanan
+              </h2>
+              <div id="orders-list" class="space-y-3 max-h-96 overflow-y-auto">
+                ${orders.length === 0 ? `
+                  <p class="text-center py-8" style="font-size: ${baseSize}px; color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; font-family: ${fontFamily};">
+                    Belum ada pesanan
+                  </p>
+                ` : orders.map(order => `
+                  <div class="border rounded-lg p-4" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+                    <div class="flex justify-between items-start mb-2">
+                      <div>
+                        <p class="font-semibold" style="font-size: ${baseSize}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                          ${order.customer_name}
+                        </p>
+                        <p style="font-size: ${baseSize * 0.85}px; color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; font-family: ${fontFamily};">
+                          ${order.order_id}
+                        </p>
+                      </div>
+                      <p class="font-bold" style="font-size: ${baseSize * 1.1}px; color: ${config.primary_action_color || defaultConfig.primary_action_color}; font-family: ${fontFamily};">
+                        ${formatCurrency(order.total_price)}
+                      </p>
+                    </div>
+                    <p style="font-size: ${baseSize * 0.85}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                      ${order.product_name} (${order.quantity}x)
+                    </p>
+                    <p style="font-size: ${baseSize * 0.75}px; color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; font-family: ${fontFamily};">
+                      ${formatDate(order.order_date)}
+                    </p>
+                    <div class="flex gap-2 mt-3">
+                      <button 
+                        onclick="showReceipt(orders.find(o => o.order_id === '${order.order_id}'))"
+                        class="flex-1 py-2 rounded-lg font-semibold transition-colors"
+                        style="font-size: ${baseSize * 0.85}px; background-color: ${config.primary_action_color || defaultConfig.primary_action_color}; color: #ffffff; font-family: ${fontFamily};"
+                        onmouseover="this.style.opacity='0.9'"
+                        onmouseout="this.style.opacity='1'"
+                      >
+                        Lihat Kwitansi
+                      </button>
+                      <button 
+                        onclick="deleteOrder(orders.find(o => o.order_id === '${order.order_id}'))"
+                        data-order-id="${order.order_id}"
+                        class="px-4 py-2 rounded-lg font-semibold transition-colors"
+                        style="font-size: ${baseSize * 0.85}px; background-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; color: #ffffff; font-family: ${fontFamily};"
+                        onmouseover="this.style.opacity='0.9'"
+                        onmouseout="this.style.opacity='1'"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="receipt-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div class="rounded-lg shadow-2xl max-w-2xl w-full max-h-[90%] overflow-y-auto" style="background-color: ${config.surface_color || defaultConfig.surface_color};">
+            <div class="p-6">
+              <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold" style="font-size: ${baseSize * 1.5}px; color: ${config.text_color || defaultConfig.text_color}; font-family: ${fontFamily};">
+                  Kwitansi Penjualan
+                </h3>
+                <button 
+                  onclick="closeReceipt()"
+                  class="px-4 py-2 rounded-lg font-semibold transition-colors"
+                  style="font-size: ${baseSize}px; background-color: ${config.secondary_action_color || defaultConfig.secondary_action_color}; color: #ffffff; font-family: ${fontFamily};"
+                  onmouseover="this.style.opacity='0.9'"
+                  onmouseout="this.style.opacity='1'"
+                >
+                  Tutup
+                </button>
+              </div>
+              
+              <div id="receipt-print" class="p-6 border-2 rounded-lg mb-4" style="border-color: ${config.secondary_action_color || defaultConfig.secondary_action_color};">
+                <div id="receipt-content"></div>
+              </div>
+              
+              <button 
+                onclick="shareReceipt()"
+                class="w-full py-3 rounded-lg font-semibold transition-colors"
+                style="font-size: ${baseSize}px; background-color: ${config.primary_action_color || defaultConfig.primary_action_color}; color: #ffffff; font-family: ${fontFamily};"
+                onmouseover="this.style.opacity='0.9'"
+                onmouseout="this.style.opacity='1'"
+              >
+                📱 Kirim ke Konsumen
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const form = document.getElementById('order-form');
+      if (form) {
+        form.addEventListener('submit', handleFormSubmit);
+      }
+    }
+
+    const dataHandler = {
+      onDataChanged(data) {
+        orders = data;
+        render();
+      }
+    };
+
+    async function init() {
+      try {
+        // Tunggu sampai DOM siap
+        if (document.readyState === 'loading') {
+          await new Promise(resolve => {
+            document.addEventListener('DOMContentLoaded', resolve);
+          });
+        }
+
+        // Inisialisasi Data SDK
+        if (window.dataSdk) {
+          const initResult = await window.dataSdk.init(dataHandler);
+          if (!initResult.isOk) {
+            console.error("Failed to initialize data SDK");
+            // Tetap lanjutkan tanpa data persistence
+          }
+        }
+
+        // Inisialisasi Element SDK jika tersedia
+        if (window.elementSdk) {
+          window.elementSdk.init({
+            defaultConfig,
+            onConfigChange,
+            mapToCapabilities: (config) => ({
+              recolorables: [
+                {
+                  get: () => config.background_color || defaultConfig.background_color,
+                  set: (value) => {
+                    config.background_color = value;
+                    if (window.elementSdk) {
+                      window.elementSdk.setConfig({ background_color: value });
+                    }
+                  }
+                },
+                {
+                  get: () => config.surface_color || defaultConfig.surface_color,
+                  set: (value) => {
+                    config.surface_color = value;
+                    if (window.elementSdk) {
+                      window.elementSdk.setConfig({ surface_color: value });
+                    }
+                  }
+                },
+                {
+                  get: () => config.text_color || defaultConfig.text_color,
+                  set: (value) => {
+                    config.text_color = value;
+                    if (window.elementSdk) {
+                      window.elementSdk.setConfig({ text_color: value });
+                    }
+                  }
+                },
+                {
+                  get: () => config.primary_action_color || defaultConfig.primary_action_color,
+                  set: (value) => {
+                    config.primary_action_color = value;
+                    if (window.elementSdk) {
+                      window.elementSdk.setConfig({ primary_action_color: value });
+                    }
+                  }
+                },
+                {
+                  get: () => config.secondary_action_color || defaultConfig.secondary_action_color,
+                  set: (value) => {
+                    config.secondary_action_color = value;
+                    if (window.elementSdk) {
+                      window.elementSdk.setConfig({ secondary_action_color: value });
+                    }
+                  }
+                }
+              ],
+              borderables: [],
+              fontEditable: {
+                get: () => config.font_family || defaultConfig.font_family,
+                set: (value) => {
+                  config.font_family = value;
+                  if (window.elementSdk) {
+                    window.elementSdk.setConfig({ font_family: value });
+                  }
+                }
+              },
+              fontSizeable: {
+                get: () => config.font_size || defaultConfig.font_size,
+                set: (value) => {
+                  config.font_size = value;
+                  if (window.elementSdk) {
+                    window.elementSdk.setConfig({ font_size: value });
+                  }
+                }
+              }
+            }),
+            mapToEditPanelValues: (config) => new Map([
+              ["store_name", config.store_name || defaultConfig.store_name],
+              ["store_phone", config.store_phone || defaultConfig.store_phone],
+              ["store_address", config.store_address || defaultConfig.store_address],
+              ["default_product_name", config.default_product_name || defaultConfig.default_product_name],
+              ["default_price", config.default_price || defaultConfig.default_price]
+            ])
+          });
+        }
+
+        // Render aplikasi
+        render();
+      } catch (error) {
+        console.error("Error initializing app:", error);
+        // Tetap render aplikasi meski ada error
+        render();
+      }
+    }
+
+    // Mulai inisialisasi
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99a1fe0d01ce40f6',t:'MTc2MjQwNDg2MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
